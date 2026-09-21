@@ -45,10 +45,11 @@ detect_system() {
   fi
 
   PM=""
-  for p in apt-get dnf yum zypper pacman apk; do has "$p" && { PM=$p; break; }; done
+  for p in apt-get dnf yum zypper pacman apk xbps-install; do has "$p" && { PM=$p; break; }; done
 
   if [[ -d /run/systemd/system ]]; then INIT=systemd
   elif has rc-service; then INIT=openrc
+  elif has sv && [[ -d /run/runit || -d /etc/runit ]]; then INIT=runit
   else INIT=sysv; fi
 
   FIREWALL=none
@@ -102,6 +103,7 @@ pkg_install() {
     zypper)  zypper -n install "$@" ;;
     pacman)  pacman -S --noconfirm --needed "$@" ;;
     apk)     apk add "$@" ;;
+    xbps-install) xbps-install -Sy "$@" ;;
     *) bad "No known package manager. Install manually: $*"; return 1 ;;
   esac
 }
@@ -117,6 +119,7 @@ pkg_owner() {  # prints the package that owns a file; fails if none
     apt-get) dpkg -S "$f" 2>/dev/null || dpkg -S "${f#/usr}" 2>/dev/null ;;
     pacman)  pacman -Qo "$f" 2>/dev/null ;;
     apk)     apk info --who-owns "$f" 2>/dev/null | grep -q 'owned by' && apk info --who-owns "$f" ;;
+    xbps-install) xbps-query -o "$f" 2>/dev/null ;;
     *) return 1 ;;
   esac
 }
@@ -124,6 +127,7 @@ svc_restart() {
   case $INIT in
     systemd) systemctl restart "$1" ;;
     openrc)  rc-service "$1" restart ;;
+    runit)   sv restart "$1" ;;
     *)       service "$1" restart ;;
   esac
 }
@@ -284,6 +288,7 @@ check_services() {
     systemd) local f; f=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}')
              if [[ -z $f ]]; then ok "No failed services."; else bad "Failed:"; echo "$f"; fi ;;
     openrc)  rc-status --crashed 2>/dev/null || true ;;
+    runit)   info "Failed-service detection isn't implemented for runit (paths vary by system). Try: sv status /var/service/* or /etc/runit/runsvdir/current/*" ;;
     *)       info "Stopped services (may be normal):"; service --status-all 2>/dev/null | grep -F '[ - ]' | head -20 ;;
   esac
 
@@ -309,9 +314,12 @@ check_services() {
     1) confirm "Restart $name?" && svc_restart "$name" && ok "$name restarted." ;;
     2) if [[ $INIT == systemd ]]; then journalctl -u "$name" -n 50 --no-pager
        else tail -50 "/var/log/$name.log" 2>/dev/null || tail -50 /var/log/messages; fi ;;
-    3) confirm "Enable $name at boot?" && case $INIT in
-         systemd) systemctl enable "$name" ;; openrc) rc-update add "$name" default ;;
-         *) if has update-rc.d; then update-rc.d "$name" enable; else chkconfig "$name" on; fi ;; esac ;;
+    3) case $INIT in
+         runit) warn "Enabling at boot under runit means symlinking its 'sv' directory into the active service dir (e.g. ln -s /etc/sv/$name /var/service/) — the exact path varies by system, so do this manually." ;;
+         *) confirm "Enable $name at boot?" && case $INIT in
+              systemd) systemctl enable "$name" ;; openrc) rc-update add "$name" default ;;
+              *) if has update-rc.d; then update-rc.d "$name" enable; else chkconfig "$name" on; fi ;; esac ;;
+       esac ;;
   esac
 }
 
@@ -683,6 +691,7 @@ full_report() {
 #  Menu
 # =====================================================================
 detect_system
+[[ -z $PM ]] && warn "No known package manager detected (apt-get/dnf/yum/zypper/pacman/apk/xbps-install). Install/update/malware-scanner features that need to install a package will not work — install tools manually."
 [[ ${1:-} == "--report" ]] && { full_report; exit 0; }
 
 while true; do

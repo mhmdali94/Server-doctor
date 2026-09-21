@@ -8,11 +8,16 @@ No dependencies beyond bash and core Linux tools — missing helpers (like
 
 ## Supported systems
 
-- **Distros:** Debian/Ubuntu, RHEL/AlmaLinux/Rocky/CentOS/Fedora, openSUSE, Arch, Alpine
-- **Init systems:** systemd, OpenRC, SysV
+- **Distros (full support):** Debian/Ubuntu, RHEL/AlmaLinux/Rocky/CentOS/Fedora/Amazon Linux, openSUSE, Arch, Alpine
+- **Distros (partial support):** Void Linux — package install and service restart work; "enable at boot" and the failed-services list print a manual-steps message instead of guessing runit's service-dir layout
+- **Not supported:** Gentoo, NixOS, Slackware, and anything non-Linux (BSD, macOS) — the script relies on `/proc`, `/etc/os-release`, and Linux-only tools throughout, and none of those distros' package/service models fit its "offer to install a missing binary" pattern. If no known package manager is found, the script says so once at startup and keeps working for everything that doesn't require installing something.
+- **Init systems:** systemd, OpenRC, runit (partial — see above), SysV
 - **Firewalls:** ufw, firewalld, CSF, nftables, iptables
 - **Malware scanners:** Imunify360, ClamAV, Linux Malware Detect, rkhunter
 - **Control panels:** detects Plesk, cPanel, DirectAdmin, CyberPanel, Webmin
+
+Bash is required. On Alpine, install it first (`apk add bash`) since it isn't
+part of the base image.
 
 ## Usage
 
