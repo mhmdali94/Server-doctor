@@ -19,11 +19,36 @@ No dependencies beyond bash and core Linux tools — missing helpers (like
 Bash is required. On Alpine, install it first (`apk add bash`) since it isn't
 part of the base image.
 
+## Install
+
+Download and run in one step (nothing is installed on the system):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mhmdali94/Server-doctor/main/server-doctor.sh -o server-doctor.sh
+sudo bash server-doctor.sh
+```
+
+Or clone the repo:
+
+```bash
+git clone https://github.com/mhmdali94/Server-doctor.git
+cd Server-doctor
+sudo bash server-doctor.sh
+```
+
+To make it available as a plain `server-doctor` command anywhere on the box:
+
+```bash
+sudo install -m 755 server-doctor.sh /usr/local/bin/server-doctor
+sudo server-doctor            # interactive menu
+sudo server-doctor --report   # read-only full report
+```
+
 ## Usage
 
 ```bash
-sudo bash "Server doctor.sh"            # interactive menu
-sudo bash "Server doctor.sh" --report   # read-only full report, saved to /root/server-report-<date>.txt
+sudo bash server-doctor.sh            # interactive menu
+sudo bash server-doctor.sh --report   # read-only full report, saved to /root/server-report-<date>.txt
 ```
 
 Must be run as root — it reads logs, restarts services, and manages the
