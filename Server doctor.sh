@@ -135,6 +135,7 @@ listening_ports() {  # proto  local-address  process
 auth_log() {  # print ~24h of SSH/auth log lines
   if [[ $INIT == systemd ]] && has journalctl; then
     journalctl -u ssh -u sshd --since "24 hours ago" --no-pager -q 2>/dev/null
+    return
   fi
   for f in /var/log/auth.log /var/log/secure /var/log/messages; do
     [[ -r $f ]] && tail -n 20000 "$f"
@@ -164,9 +165,10 @@ check_cpu() {
   local US=$((100*du/tot)) SY=$((100*ds/tot)) ID=$((100*di/tot)) WA=$((100*dw/tot)) ST=$((100*dst/tot))
   echo "  us (apps): ${W}$US%${N}  sy (kernel): $SY%  id (idle): $ID%  wa (disk wait): ${W}$WA%${N}  st (steal): ${W}$ST%${N}"
 
-  local l1=${load%% *}; l1=${l1%.*}
-  if (( l1 > cores * 2 )); then bad "Load $l1 is very high for $cores cores (tasks are waiting)."
-  elif (( l1 > cores )); then warn "Load $l1 is above $cores cores."
+  local l1raw=${load%% *}
+  local l1; l1=$(awk -v v="$l1raw" 'BEGIN{printf "%d", v+0.5}')
+  if (( l1 > cores * 2 )); then bad "Load $l1raw is very high for $cores cores (tasks are waiting)."
+  elif (( l1 > cores )); then warn "Load $l1raw is above $cores cores."
   else ok "Load is fine."; fi
 
   local problem=0
@@ -219,6 +221,7 @@ check_docker() {
   local names; mapfile -t names < <(docker ps -a --format '{{.Names}}')
   local i=1 n; for n in "${names[@]}"; do echo "  $i) $n"; ((i++)); done
   local pick; pick=$(ask "Container number: ")
+  [[ $pick =~ ^[0-9]+$ ]] || { warn "Invalid choice."; return; }
   local name=${names[$((pick-1))]:-}
   [[ -z $name ]] && { warn "Invalid choice."; return; }
   if [[ $c == 1 ]]; then
@@ -308,7 +311,7 @@ check_services() {
        else tail -50 "/var/log/$name.log" 2>/dev/null || tail -50 /var/log/messages; fi ;;
     3) confirm "Enable $name at boot?" && case $INIT in
          systemd) systemctl enable "$name" ;; openrc) rc-update add "$name" default ;;
-         *) has update-rc.d && update-rc.d "$name" enable || chkconfig "$name" on ;; esac ;;
+         *) if has update-rc.d; then update-rc.d "$name" enable; else chkconfig "$name" on; fi ;; esac ;;
   esac
 }
 
@@ -502,7 +505,7 @@ check_suspicious() {
     reason=""
     [[ $exe =~ ^(/tmp|/var/tmp|/dev/shm|/run/shm) ]] && reason="runs from a temp folder"
     [[ $exe == *"(deleted)"* && $exe != *memfd:* && $exe != /usr/* ]] && reason="its program file was deleted"
-    [[ $exe =~ /\.[^/]+/ && ! $exe =~ ^/(usr|opt|snap|var/lib/docker|root/\.vscode-server|home/[^/]+/\.vscode-server) ]] && reason="runs from a hidden folder"
+    [[ $exe =~ /\.[^/]+/ && ! $exe =~ ^/(usr|opt|snap|var/lib/docker|root/\.vscode-server|home/[^/]+/\.(vscode-server|nvm|npm|cargo|rustup|rbenv|pyenv|sdkman|asdf|rvm|deno|bun|pm2|local|volta|docker)) ]] && reason="runs from a hidden folder"
     if [[ -n $reason ]]; then
       found=1; bad "PID $pid: $reason"
       echo "      exe: $exe"
@@ -661,6 +664,7 @@ check_updates() {
 # =====================================================================
 full_report() {
   local out; out="/root/server-report-$(date +%F-%H%M).txt"
+  local raw; raw=$(mktemp)
   hdr "Running full read-only check → $out"
   REPORT_MODE=1
   {
@@ -669,9 +673,10 @@ full_report() {
     check_firewall; check_logins; check_zombies; check_suspicious; check_cron
     check_malware; check_updates
     if has vmstat; then hdr "vmstat 1 5 (for your provider)"; vmstat 1 5; fi
-  } 2>&1 | tee >(sed 's/\x1b\[[0-9;]*m//g' > "$out")
+  } 2>&1 | tee "$raw"
   REPORT_MODE=0
-  sleep 1; echo; ok "Report saved: $out"
+  sed 's/\x1b\[[0-9;]*m//g' "$raw" > "$out"; rm -f "$raw"
+  echo; ok "Report saved: $out"
 }
 
 # =====================================================================
